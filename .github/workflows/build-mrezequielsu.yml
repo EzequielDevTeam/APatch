@@ -1,0 +1,86 @@
+name: Build MrEzequielSU
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Rebrand APatch -> MrEzequielSU
+        run: |
+          set -e
+          # Pacote: me.bmax.apatch -> com.mrezequiel.su (codigo, manifest, aidl, JNI, rust)
+          grep -rl 'me\.bmax\.apatch' app apd 2>/dev/null | xargs sed -i 's/me\.bmax\.apatch/com.mrezequiel.su/g' || true
+          grep -rl 'me/bmax/apatch' app apd 2>/dev/null | xargs sed -i 's#me/bmax/apatch#com/mrezequiel/su#g' || true
+          # Move diretorios do pacote
+          if [ -d app/src/main/java/me/bmax/apatch ]; then
+            mkdir -p app/src/main/java/com/mrezequiel
+            git mv app/src/main/java/me/bmax/apatch app/src/main/java/com/mrezequiel/su 2>/dev/null || mv app/src/main/java/me/bmax/apatch app/src/main/java/com/mrezequiel/su
+            rm -rf app/src/main/java/me
+          fi
+          if [ -d app/src/main/aidl/me/bmax/apatch ]; then
+            mkdir -p app/src/main/aidl/com/mrezequiel
+            git mv app/src/main/aidl/me/bmax/apatch app/src/main/aidl/com/mrezequiel/su 2>/dev/null || mv app/src/main/aidl/me/bmax/apatch app/src/main/aidl/com/mrezequiel/su
+            rm -rf app/src/main/aidl/me
+          fi
+          # Nome visivel do app (locale padrao)
+          sed -i 's/APatch/MrEzequielSU/g' app/src/main/res/values/strings.xml
+          # Credito no README (LICENSE GPL-3.0 mantida intacta)
+          printf '# MrEzequielSU\n\nFork de [APatch](https://github.com/bmax121/APatch) por **bmax121**, licenca GPL-3.0 mantida (ver LICENSE). Creditos originais preservados abaixo.\n\n---\n\n' | cat - README.md > README.new && mv README.new README.md
+          echo "=== conferencia ==="
+          grep -rn 'me\.bmax\.apatch\|me/bmax/apatch' app apd 2>/dev/null | head -n 5 || echo "zero ocorrencias restantes"
+          grep -n 'app_name' app/src/main/res/values/strings.xml | head -n 2
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: jetbrains
+          java-version: 21
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: ''
+
+      - name: Install toolchain
+        run: |
+          rustup default stable
+          rustup update stable
+          cargo install cargo-ndk
+          rustup target install aarch64-linux-android
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apd
+          cache-targets: false
+
+      - name: Build with Gradle
+        run: |
+          echo 'org.gradle.parallel=true' >> gradle.properties
+          echo 'org.gradle.vfs.watch=true' >> gradle.properties
+          echo 'org.gradle.jvmargs=-Xmx2048m' >> gradle.properties
+          echo 'android.native.buildOutput=verbose' >> gradle.properties
+          sed -i 's/org.gradle.configuration-cache=true//g' gradle.properties
+          ./gradlew clean assembleDebug assembleRelease
+
+      - name: Upload MrEzequielSU APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: MrEzequielSU
+          path: |
+            app/build/outputs/apk/**/MrEzequielSU-*.apk
+            app/build/outputs/apk/**/*.apk
+          if-no-files-found: error
+          retention-days: 14
